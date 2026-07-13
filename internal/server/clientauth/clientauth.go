@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	"github.com/zdgeier/jamsync/internal/jamenv"
 )
 
-// TODO: fix error output in this file
 var redirectUrl = "http://localhost:8082/callback"
 
 // AuthorizeUser implements the PKCE OAuth2 flow.
@@ -55,8 +53,8 @@ func AuthorizeUser() {
 		codeVerifier := CodeVerifier.String()
 		token, err := getAccessToken(jamenv.Auth0ClientID(), codeVerifier, code, redirectUrl)
 		if err != nil {
-			log.Println("could not get access token")
-			io.WriteString(w, "Error: could not retrieve access token\n")
+			log.Printf("could not get access token: %v\n", err)
+			io.WriteString(w, "Error: could not retrieve access token\n"+err.Error()+"\n")
 
 			// close the HTTP server and return
 			cleanup(server)
@@ -222,18 +220,32 @@ func getAccessToken(clientID string, codeVerifier string, authorizationCode stri
 
 	// process the response
 	defer res.Body.Close()
-	var responseData map[string]interface{}
-	body, _ := ioutil.ReadAll(res.Body)
-
-	// unmarshal the json into a string map
-	err = json.Unmarshal(body, &responseData)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		fmt.Printf("JSON error: %s", err)
-		return "", err
+		return "", fmt.Errorf("read token response: %w", err)
 	}
 
-	// retrieve the access token out of the map, and return to caller
-	accessToken := responseData["access_token"].(string)
+	return parseAccessToken(body)
+}
+
+func parseAccessToken(body []byte) (string, error) {
+	var responseData map[string]interface{}
+	if err := json.Unmarshal(body, &responseData); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+
+	value, ok := responseData["access_token"]
+	if !ok {
+		return "", fmt.Errorf("missing access_token in token response: %s", string(body))
+	}
+
+	accessToken, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("access_token must be a string")
+	}
+	if accessToken == "" {
+		return "", fmt.Errorf("access_token must not be empty")
+	}
 	return accessToken, nil
 }
 
