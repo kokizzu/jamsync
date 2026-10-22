@@ -1,6 +1,6 @@
 module github.com/zdgeier/jamsync
 
-go 1.26
+go 1.26.10
 
 require (
 	github.com/auth0/go-jwt-middleware/v2 v2.1.0
